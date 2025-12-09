@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>StudyPond – Notes & Mini-Games</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root{
+      --pond:#d9f1ff;
+      --lily:#4caf50;
+      --duck:#ffb74d;
+      --text:#004d40;
+    }
+    *{box-sizing:border-box;font-family:system-ui,Arial;}
+    body{margin:0;background:var(--pond);color:var(--text);display:flex;height:100vh;overflow:hidden;}
+    header{position:fixed;top:0;left:0;right:0;height:50px;background:var(--lily);color:#fff;display:flex;align-items:center;padding:0 12px;font-weight:bold;z-index:10;}
+    header span{margin-left:auto;cursor:pointer;padding:4px 10px;border-radius:4px;background:rgba(0,0,0,.15);}
+    #sidebar{width:280px;background:#fff;border-right:2px solid var(--lily);padding:60px 12px 12px;display:flex;flex-direction:column;}
+    #sidebar h3{margin-top:0;font-size:1rem;}
+    #notes{width:100%;flex:1;resize:none;border:1px solid #ccc;border-radius:4px;padding:6px;font-size:.9rem;}
+    main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 12px 12px;}
+    .game-card{width:260px;background:#fff;border:2px solid var(--duck);border-radius:12px;padding:16px;margin:10px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.1);}
+    .game-card h4{margin:0 0 8px;}
+    .game-card button{background:var(--duck);border:none;padding:8px 14px;border-radius:6px;color:#fff;font-weight:bold;cursor:pointer;}
+    .game-card button:hover{filter:brightness(1.1);}
+    canvas{border:1px solid #999;display:block;margin:8px auto;background:#fafafa;}
+    #score{font-weight:bold;margin-top:6px;}
+    .hidden{display:none;}
+  </style>
+</head>
+<body>
+<header>
+  🦆 StudyPond – Quick Notes & Brain Breaks
+  <span id="toggleBtn">Study Mode</span>
+</header>
+
+<aside id="sidebar">
+  <h3>Your Notes (auto-saved)</h3>
+  <textarea id="notes" placeholder="Paste class notes here…"></textarea>
+</aside>
+
+<main id="mainPanel">
+  <div class="game-card">
+    <h4>Duck Clicker</h4>
+    <canvas id="clicker" width="240" height="160"></canvas>
+    <div id="score">Score: 0</div>
+  </div>
+
+  <div class="game-card">
+    <h4>Lily Leap</h4>
+    <canvas id="leap" width="240" height="160"></canvas>
+    <button id="jumpBtn">Jump</button>
+  </div>
+
+  <div class="game-card">
+    <h4>Color Catch</h4>
+    <canvas id="catch" width="240" height="160"></canvas>
+    <div id="catchScore">Score: 0</div>
+  </div>
+</main>
+
+<script>
+/* --------- Study Mode toggle --------- */
+const toggleBtn = document.getElementById('toggleBtn');
+const mainPanel = document.getElementById('mainPanel');
+const sidebar = document.getElementById('sidebar');
+let studyMode = true;
+toggleBtn.onclick = ()=>{
+  studyMode = !studyMode;
+  mainPanel.classList.toggle('hidden', studyMode);
+  sidebar.style.display = studyMode ? 'flex' : 'none';
+  toggleBtn.textContent = studyMode ? 'Study Mode' : 'Game Mode';
+};
+
+/* --------- Notes persistence --------- */
+const notes = document.getElementById('notes');
+notes.value = localStorage.getItem('studyPondNotes')||'';
+notes.oninput = ()=> localStorage.setItem('studyPondNotes', notes.value);
+
+/* --------- Duck Clicker --------- */
+(()=>{
+  const cv = document.getElementById('clicker');
+  const ctx = cv.getContext('2d');
+  let score = 0;
+  function drawDuck(x,y){
+    ctx.clearRect(0,0,cv.width,cv.height);
+    ctx.fillStyle = '#ffb74d';
+    ctx.beginPath(); ctx.ellipse(x,y,18,14,0,0,Math.PI*2); ctx.fill(); // body
+    ctx.beginPath(); ctx.ellipse(x-12,y-6,8,6,0,0,Math.PI*2); ctx.fill(); // head
+    ctx.fillStyle = '#ff9800';
+    ctx.beginPath(); ctx.moveTo(x-20,y-2); ctx.lineTo(x-28,y-4); ctx.lineTo(x-20,y-6); ctx.closePath(); ctx.fill(); // beak
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x-16,y-8,2,2); ctx.fillRect(x-10,y-8,2,2); // eyes
+  }
+  let duckX = 120, duckY = 80;
+  drawDuck(duckX,duckY);
+  cv.onclick = (e)=>{
+     const rect = cv.getBoundingClientRect();
+     const x = e.clientX - rect.left;
+     const y = e.clientY - rect.top;
+     if(Math.hypot(x-duckX,y-duckY)<25){
+       score++;
+       document.getElementById('score').textContent = 'Score: '+score;
+       duckX = 30+Math.random()*(cv.width-60);
+       duckY = 30+Math.random()*(cv.height-60);
+       drawDuck(duckX,duckY);
+     }
+  };
+})();
+
+/* --------- Lily Leap (flappy-style) --------- */
+(()=>{
+  const cv = document.getElementById('leap');
+  const ctx = cv.getContext('2d');
+  let birdY = 80, velocity = 0, gravity = .4, jumpPower = -6;
+  let pipes = [], frame = 0, alive = true;
+  function reset(){
+    birdY = 80; velocity = 0; pipes = []; frame = 0; alive = true;
+  }
+  function draw(){
+    ctx.clearRect(0,0,cv.width,cv.height);
+    // bird
+    ctx.fillStyle = '#ffb74d';
+    ctx.beginPath(); ctx.arc(40,birdY,10,0,Math.PI*2); ctx.fill();
+    if(!alive) return;
+    velocity += gravity;
+    birdY += velocity;
+    if(birdY<0||birdY>cv.height) alive=false;
+    // pipes
+    if(frame%90===0) pipes.push({x:cv.width,y:0,w:30,h:40+Math.random()*60});
+    pipes.forEach(p=>{
+      p.x-=2;
+      ctx.fillStyle = '#4caf50';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillRect(p.x, p.y+p.h+60, p.w, cv.height-p.h-60);
+      if(40+10>p.x && 40-10<p.x+p.w && (birdY-10<p.h||birdY+10>p.h+60)) alive=false;
+    });
+    pipes = pipes.filter(p=>p.x+p.w>0);
+    frame++;
+    requestAnimationFrame(draw);
+  }
+  document.getElementById('jumpBtn').onclick = ()=>{ if(alive) velocity=jumpPower; else reset(); };
+  draw();
+})();
+
+/* --------- Color Catch --------- */
+(()=>{
+  const cv = document.getElementById('catch');
+  const ctx = cv.getContext('2d');
+  const colors = ['#f44336','#2196f3','#4caf50','#ffeb3b'];
+  let target = 0, blocks = [], score=0, speed=2;
+  function reset(){ blocks=[]; score=0; speed=2; newRound(); }
+  function newRound(){
+    target = Math.floor(Math.random()*4);
+    blocks = [];
+    for(let i=0;i<12;i++) blocks.push({x:i*20,y:0,color:Math.floor(Math.random()*4)});
+  }
+  cv.onclick = (e)=>{
+    const rect = cv.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const row = Math.floor(x/20);
+    if(blocks[row] && blocks[row].color===target){ score++; speed+=.2; newRound(); }
+    else reset();
+    document.getElementById('catchScore').textContent='Score: '+score;
+  };
+  function draw(){
+    ctx.clearRect(0,0,cv.width,cv.height);
+    ctx.fillStyle = colors[target];
+    ctx.fillRect(0,cv.height-20,cv.width,20); // target bar
+    blocks.forEach((b,idx)=>{
+      b.y+=speed;
+      ctx.fillStyle = colors[b.color];
+      ctx.fillRect(b.x,b.y,18,18);
+      if(b.y>cv.height-20 && b.color!==target) reset();
+    });
+    requestAnimationFrame(draw);
+  }
+  reset(); draw();
+})();
+</script>
+</body>
+</html> 
